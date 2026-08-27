@@ -2,7 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, LockKeyhole, Mail, Rocket } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import BackgroundEffects from "@/components/BackgroundEffects";
 
 type AuthMode = "login" | "signup";
 
@@ -102,124 +104,168 @@ export default function AuthPage() {
 
   if (checkingSession) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-100">
-        <p className="text-slate-700">Checking your account...</p>
+      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950">
+        <BackgroundEffects />
+
+        <div className="relative z-10 rounded-2xl border border-cyan-400/20 bg-slate-900/70 px-8 py-6 text-center shadow-2xl backdrop-blur-xl">
+          <div className="mx-auto mb-4 h-10 w-10 animate-pulse rounded-full bg-cyan-400/20" />
+          <p className="text-slate-300">Checking your account...</p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-6 py-12">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-12 sm:px-6">
+      <BackgroundEffects />
+
+      <div className="relative z-10 w-full max-w-md">
         <button
           type="button"
           onClick={() => router.back()}
-          className="mb-6 text-sm font-medium text-slate-600 hover:text-slate-900"
+          className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition hover:text-cyan-300"
         >
-          ← Back
+          <ArrowLeft size={17} />
+          Back
         </button>
 
-        <h1 className="text-3xl font-bold text-slate-900">PMPilot</h1>
+        <section className="mission-panel rounded-3xl border border-cyan-400/20 bg-slate-900/75 p-7 shadow-2xl backdrop-blur-xl sm:p-9">
+          <div className="mb-7 flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-300">
+              <Rocket size={25} />
+            </div>
 
-        <p className="mt-2 text-slate-600">
-          {mode === "login"
-            ? "Sign in to manage your private projects."
-            : "Create an account to start planning projects."}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-300">
+                AI Mission Control
+              </p>
+
+              <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">
+                PMPilot
+              </h1>
+            </div>
+          </div>
+
+          <p className="text-slate-400">
+            {mode === "login"
+              ? "Sign in to access your projects and mission dashboard."
+              : "Create your account and start building AI-powered project plans."}
+          </p>
+
+          <div className="mt-7 grid grid-cols-2 rounded-xl border border-slate-700/70 bg-slate-950/60 p-1">
+            <button
+              type="button"
+              onClick={() => changeMode("login")}
+              className={`rounded-lg px-4 py-3 text-sm font-semibold transition ${
+                mode === "login"
+                  ? "bg-cyan-400/15 text-cyan-300 shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Sign In
+            </button>
+
+            <button
+              type="button"
+              onClick={() => changeMode("signup")}
+              className={`rounded-lg px-4 py-3 text-sm font-semibold transition ${
+                mode === "signup"
+                  ? "bg-cyan-400/15 text-cyan-300 shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+            <div>
+              <label
+                htmlFor="email"
+                className="mb-2 block text-sm font-medium text-slate-300"
+              >
+                Email
+              </label>
+
+              <div className="relative">
+                <Mail
+                  size={19}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
+                />
+
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-3.5 pl-12 pr-4 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-2 block text-sm font-medium text-slate-300"
+              >
+                Password
+              </label>
+
+              <div className="relative">
+                <LockKeyhole
+                  size={19}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
+                />
+
+                <input
+                  id="password"
+                  type="password"
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="At least 6 characters"
+                  required
+                  minLength={6}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-3.5 pl-12 pr-4 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <p className="rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-300">
+                {error}
+              </p>
+            )}
+
+            {message && (
+              <p className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+                {message}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="space-primary-button flex w-full items-center justify-center rounded-xl px-5 py-3.5 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading
+                ? "Please wait..."
+                : mode === "login"
+                  ? "Sign In"
+                  : "Create Account"}
+            </button>
+          </form>
+        </section>
+
+        <p className="mt-5 text-center text-xs text-slate-600">
+          Secure authentication powered by Supabase
         </p>
-
-        <div className="mt-6 grid grid-cols-2 rounded-lg bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => changeMode("login")}
-            className={`rounded-md px-4 py-2 ${
-              mode === "login"
-                ? "bg-white font-semibold text-slate-900 shadow"
-                : "text-slate-600"
-            }`}
-          >
-            Sign In
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeMode("signup")}
-            className={`rounded-md px-4 py-2 ${
-              mode === "signup"
-                ? "bg-white font-semibold text-slate-900 shadow"
-                : "text-slate-600"
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
-          <div>
-            <label
-              htmlFor="email"
-              className="mb-2 block font-medium text-slate-800"
-            >
-              Email
-            </label>
-
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              required
-              className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="password"
-              className="mb-2 block font-medium text-slate-800"
-            >
-              Password
-            </label>
-
-            <input
-              id="password"
-              type="password"
-              autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="At least 6 characters"
-              required
-              minLength={6}
-              className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 outline-none focus:border-blue-500"
-            />
-          </div>
-
-          {error && (
-            <p className="rounded-lg bg-red-50 p-3 text-red-700">{error}</p>
-          )}
-
-          {message && (
-            <p className="rounded-lg bg-green-50 p-3 text-green-700">
-              {message}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-blue-600 p-3 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading
-              ? "Please wait..."
-              : mode === "login"
-                ? "Sign In"
-                : "Create Account"}
-          </button>
-        </form>
       </div>
     </main>
   );
-}
+} 

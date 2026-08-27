@@ -4,12 +4,25 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import {
+  Activity,
+  ArrowRight,
+  Bot,
+  FolderKanban,
+  Rocket,
+  Sparkles,
+  Target,
+  Zap,
+} from "lucide-react";
+
 import { supabase } from "@/lib/supabase";
+import MissionForm from "@/components/MissionForm";
+import Navbar from "@/components/Navbar";
+import ResultPanel from "@/components/ResultPanel";
 
 export default function Home() {
   const router = useRouter();
+
   const [user, setUser] = useState<User | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -43,18 +56,11 @@ export default function Home() {
       setUser(user);
       setCheckingSession(false);
     }
-    checkSession();
+
+    void checkSession();
   }, [router]);
 
-  if (checkingSession) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-slate-700">Loading...</p>
-      </main>
-    );
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
     if (!user) {
@@ -63,7 +69,9 @@ export default function Home() {
     }
 
     if (!name.trim() || !description.trim() || !deadline) {
-      setError("Please enter a project name, description, and deadline.");
+      setError(
+        "Please enter a project name, description, and deadline."
+      );
       return;
     }
 
@@ -92,19 +100,25 @@ export default function Home() {
 
       const responseText = await response.text();
 
-let data: { error?: string; projectPlan?: string; result?: string };
+      let data: {
+        error?: string;
+        projectPlan?: string;
+        result?: string;
+      };
 
-try {
-  data = JSON.parse(responseText);
-} catch {
-  throw new Error(
-    `The project generator returned an invalid response. Server status: ${response.status}. Check the terminal for the API error.`
-  );
-}
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(
+          `The project generator returned an invalid response. Server status: ${response.status}.`
+        );
+      }
 
-if (!response.ok) {
-  throw new Error(data.error || "Failed to generate project.");
-}
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Failed to generate project."
+        );
+      }
 
       const generatedPlan =
         data.projectPlan ||
@@ -113,17 +127,19 @@ if (!response.ok) {
 
       setResult(generatedPlan);
 
-      const { error: saveError } = await supabase.from("projects").insert({
-        name: name.trim(),
-        description: description.trim(),
-        budget: budget ? Number(budget) : null,
-        deadline,
-        priority,
-        project_type: projectType,
-        team_size: Number(teamSize),
-        generated_plan: generatedPlan,
-        user_id: user.id,
-      });
+      const { error: saveError } = await supabase
+        .from("projects")
+        .insert({
+          name: name.trim(),
+          description: description.trim(),
+          budget: budget ? Number(budget) : null,
+          deadline,
+          priority,
+          project_type: projectType,
+          team_size: Number(teamSize),
+          generated_plan: generatedPlan,
+          user_id: user.id,
+        });
 
       if (saveError) {
         console.error("Supabase save error:", saveError);
@@ -172,290 +188,296 @@ if (!response.ok) {
     });
   }
 
-  const inputStyles =
-    "w-full rounded-lg border border-slate-300 bg-white p-3 text-black placeholder:text-slate-500 outline-none focus:border-blue-500";
+  function returnHome() {
+    setShowForm(false);
+    setResult("");
+    setError("");
+    setCopied(false);
+    setSaved(false);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.replace("/auth");
+    router.refresh();
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="relative flex min-h-screen items-center justify-center lg:pl-[230px]">
+        <div className="rounded-3xl border border-cyan-400/20 bg-slate-950/60 px-10 py-8 text-center shadow-[0_0_60px_rgba(34,211,238,0.08)] backdrop-blur-2xl">
+          <Rocket
+            size={32}
+            className="mx-auto rotate-[-40deg] text-cyan-300"
+          />
+
+          <p className="mt-4 text-xs font-bold uppercase tracking-[0.25em] text-cyan-400/70">
+            Initializing PMPilot
+          </p>
+
+          <p className="mt-3 text-slate-400">
+            Loading Mission Control...
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-6 py-12">
-      <div className="mx-auto w-full max-w-6xl rounded-2xl bg-white p-10 shadow-xl">
-        <h1 className="text-4xl font-bold text-slate-900">PMPilot</h1>
+    <>
+      <Navbar onSignOut={signOut} />
 
-        <p className="mt-4 text-slate-600">
-          AI Project Management Assistant
-        </p>
+      <main className="relative min-h-screen lg:pl-[230px]">
+        <div className="relative z-10 mx-auto max-w-[1500px] px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+          {!showForm ? (
+            <>
+              {/* TOP BAR */}
 
-        {!showForm ? (
-          <div className="mt-8 grid gap-4">
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="rounded-lg bg-blue-600 p-4 text-white transition hover:bg-blue-700"
-            >
-              Create New Project
-            </button>
+              <header className="flex flex-col gap-5 border-b border-cyan-400/10 pb-7 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span>Mission Control</span>
+                    <span>/</span>
+                    <span className="text-cyan-300">
+                      Dashboard
+                    </span>
+                  </div>
 
-            <Link
-              href="/projects"
-              className="rounded-lg bg-slate-200 p-4 text-center text-slate-900 transition hover:bg-slate-300"
-            >
-              View Projects
-            </Link>
+                  <h1 className="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl">
+                    Command Center
+                  </h1>
 
-            <button
-              type="button"
-              onClick={async () => {
-                await supabase.auth.signOut();
-                router.replace("/auth");
-                router.refresh();
-              }}
-              className="rounded-lg bg-slate-800 p-4 text-white hover:bg-slate-900"
-            >
-              Sign Out
-            </button>
-          </div>
-        ) : (
-          <div
-            className={`mt-8 grid gap-8 ${
-              result ? "lg:grid-cols-2" : "grid-cols-1"
-            }`}
-          >
-            <form className="space-y-5" onSubmit={handleSubmit}>
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Project Name
-                </label>
+                  <p className="mt-2 text-lg text-cyan-300">
+                    AI Project Management Platform
+                  </p>
+                </div>
 
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Example: Campus Event Planner"
-                  className={inputStyles}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Project Description
-                </label>
-
-                <textarea
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Describe what you want to accomplish"
-                  rows={4}
-                  className={inputStyles}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Deadline
-                </label>
-
-                <input
-                  type="date"
-                  value={deadline}
-                  onChange={(event) => setDeadline(event.target.value)}
-                  className={inputStyles}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Budget ($)
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  value={budget}
-                  onChange={(event) => setBudget(event.target.value)}
-                  placeholder="1500"
-                  className={inputStyles}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Priority
-                </label>
-
-                <select
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value)}
-                  className={inputStyles}
-                >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Project Type
-                </label>
-
-                <select
-                  value={projectType}
-                  onChange={(event) => setProjectType(event.target.value)}
-                  className={inputStyles}
-                >
-                  <option value="Campus Event">Campus Event</option>
-                  <option value="Software">Software</option>
-                  <option value="Marketing">Marketing</option>
-                  <option value="HR">HR</option>
-                  <option value="Operations">Operations</option>
-                  <option value="Construction">Construction</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Team Size
-                </label>
-
-                <input
-                  type="number"
-                  min="1"
-                  value={teamSize}
-                  onChange={(event) => setTeamSize(event.target.value)}
-                  className={inputStyles}
-                />
-              </div>
-
-              {error && (
-                <p className="rounded-lg bg-red-50 p-3 font-medium text-red-700">
-                  {error}
-                </p>
-              )}
-
-              <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setError("");
-                    setResult("");
-                    setCopied(false);
-                    setSaved(false);
-                  }}
-                  disabled={loading}
-                  className="w-full rounded-lg bg-slate-200 p-3 text-slate-900 hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => setShowForm(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-400/10 px-5 py-3 font-semibold text-cyan-200 shadow-[0_0_30px_rgba(34,211,238,0.1)] transition hover:bg-cyan-400/20"
                 >
-                  Back
+                  <Rocket size={18} />
+                  Launch New Mission
                 </button>
+              </header>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg bg-blue-600 p-3 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? "Generating..." : "Generate Project Plan"}
-                </button>
-              </div>
-            </form>
+              {/* HERO */}
 
-            {result && (
-              <section className="rounded-xl border border-slate-200 bg-slate-50 p-6">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-2xl font-bold text-slate-900">
-                    Generated Project Plan
+              <section className="relative mt-8 overflow-hidden rounded-3xl border border-cyan-400/20 bg-[#031022]/70 p-7 shadow-[0_25px_90px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:p-10">
+                <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full border border-cyan-400/10">
+                  <div className="absolute inset-8 rounded-full border border-blue-400/10" />
+                  <div className="absolute inset-20 rounded-full bg-cyan-400/5 blur-3xl" />
+                </div>
+
+                <div className="relative max-w-3xl">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+                    <Activity size={13} />
+                    Systems Online
+                  </div>
+
+                  <h2 className="mt-6 text-4xl font-black leading-tight tracking-tight text-white sm:text-6xl">
+                    Take command of
+                    <span className="block bg-linear-to-r from-cyan-300 via-blue-400 to-violet-400 bg-clip-text text-transparent">
+                      every mission.
+                    </span>
                   </h2>
 
-                  {saved && (
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-800">
-                      Saved
-                    </span>
-                  )}
-                </div>
+                  <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-400">
+                    Plan projects, coordinate teams, monitor
+                    mission health, manage execution, and let AI
+                    handle the planning workload.
+                  </p>
 
-                <div className="overflow-x-auto text-slate-800">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      h1: ({ children }) => (
-                        <h1 className="mb-4 mt-6 text-3xl font-bold text-slate-900">
-                          {children}
-                        </h1>
-                      ),
-                      h2: ({ children }) => (
-                        <h2 className="mb-3 mt-6 text-2xl font-bold text-slate-900">
-                          {children}
-                        </h2>
-                      ),
-                      h3: ({ children }) => (
-                        <h3 className="mb-3 mt-5 text-xl font-semibold text-slate-900">
-                          {children}
-                        </h3>
-                      ),
-                      p: ({ children }) => (
-                        <p className="mb-4 leading-7">{children}</p>
-                      ),
-                      ul: ({ children }) => (
-                        <ul className="mb-4 list-disc space-y-2 pl-6">
-                          {children}
-                        </ul>
-                      ),
-                      ol: ({ children }) => (
-                        <ol className="mb-4 list-decimal space-y-2 pl-6">
-                          {children}
-                        </ol>
-                      ),
-                      table: ({ children }) => (
-                        <table className="mb-6 w-full min-w-[600px] border-collapse text-sm">
-                          {children}
-                        </table>
-                      ),
-                      th: ({ children }) => (
-                        <th className="border border-slate-300 bg-slate-200 p-3 text-left font-semibold">
-                          {children}
-                        </th>
-                      ),
-                      td: ({ children }) => (
-                        <td className="border border-slate-300 p-3 align-top">
-                          {children}
-                        </td>
-                      ),
-                      strong: ({ children }) => (
-                        <strong className="font-bold text-slate-900">
-                          {children}
-                        </strong>
-                      ),
-                      hr: () => <hr className="my-6 border-slate-300" />,
-                    }}
-                  >
-                    {result}
-                  </ReactMarkdown>
-                </div>
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowForm(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-cyan-400 px-6 py-3.5 font-bold text-white shadow-[0_0_35px_rgba(34,211,238,0.2)] transition hover:-translate-y-0.5 hover:brightness-110"
+                    >
+                      <Rocket size={19} />
+                      Launch New Mission
+                    </button>
 
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={copyPlan}
-                    className="w-full rounded-lg bg-slate-800 p-3 text-white hover:bg-slate-900"
-                  >
-                    {copied ? "Copied!" : "Copy Plan"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={generateAnother}
-                    className="w-full rounded-lg bg-blue-600 p-3 text-white hover:bg-blue-700"
-                  >
-                    Generate Another
-                  </button>
+                    <Link
+                      href="/projects"
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/60 px-6 py-3.5 font-semibold text-slate-200 transition hover:border-cyan-400/30 hover:text-white"
+                    >
+                      <FolderKanban size={19} />
+                      Open Projects
+                    </Link>
+                  </div>
                 </div>
               </section>
-            )}
-          </div>
-        )}
-      </div>
-    </main>
+
+              {/* COMMAND MODULES */}
+
+              <section className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                <div className="group rounded-2xl border border-cyan-400/15 bg-[#031022]/65 p-5 backdrop-blur-xl transition hover:-translate-y-1 hover:border-cyan-400/35">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10">
+                    <Sparkles
+                      size={21}
+                      className="text-cyan-300"
+                    />
+                  </div>
+
+                  <h3 className="mt-5 font-bold text-white">
+                    AI Planning
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Generate structured project plans from a
+                    mission brief.
+                  </p>
+                </div>
+
+                <div className="group rounded-2xl border border-blue-400/15 bg-[#031022]/65 p-5 backdrop-blur-xl transition hover:-translate-y-1 hover:border-blue-400/35">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-400/10">
+                    <Target
+                      size={21}
+                      className="text-blue-300"
+                    />
+                  </div>
+
+                  <h3 className="mt-5 font-bold text-white">
+                    Mission Health
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Track progress, risks, deadlines, and
+                    operational readiness.
+                  </p>
+                </div>
+
+                <div className="group rounded-2xl border border-violet-400/15 bg-[#031022]/65 p-5 backdrop-blur-xl transition hover:-translate-y-1 hover:border-violet-400/35">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/10">
+                    <Zap
+                      size={21}
+                      className="text-violet-300"
+                    />
+                  </div>
+
+                  <h3 className="mt-5 font-bold text-white">
+                    Execution
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Run tasks, milestones, Kanban, and timelines
+                    from one cockpit.
+                  </p>
+                </div>
+
+                <div className="group rounded-2xl border border-emerald-400/15 bg-[#031022]/65 p-5 backdrop-blur-xl transition hover:-translate-y-1 hover:border-emerald-400/35">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10">
+                    <Bot
+                      size={21}
+                      className="text-emerald-300"
+                    />
+                  </div>
+
+                  <h3 className="mt-5 font-bold text-white">
+                    AI Communications
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Generate and send project communications
+                    directly to your crew.
+                  </p>
+                </div>
+              </section>
+
+              {/* PROJECT CTA */}
+
+              <section className="mt-7 flex flex-col gap-5 rounded-2xl border border-cyan-400/15 bg-[#031022]/60 p-6 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-400/60">
+                    Mission Portfolio
+                  </p>
+
+                  <h3 className="mt-2 text-xl font-bold text-white">
+                    Continue an active mission
+                  </h3>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Open your project command center and continue
+                    execution.
+                  </p>
+                </div>
+
+                <Link
+                  href="/projects"
+                  className="inline-flex items-center gap-2 font-semibold text-cyan-300 transition hover:text-cyan-200"
+                >
+                  View Projects
+                  <ArrowRight size={18} />
+                </Link>
+              </section>
+            </>
+          ) : (
+            <div className="pb-16">
+              {/* FORM HEADER */}
+
+              <div className="mb-7">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-400/70">
+                  Mission Creation
+                </p>
+
+                <h1 className="mt-2 text-4xl font-black tracking-tight text-white">
+                  Launch New Mission
+                </h1>
+
+                <p className="mt-2 text-slate-400">
+                  Define the objective and let PMPilot generate the
+                  execution plan.
+                </p>
+              </div>
+
+              <div
+                className={`grid gap-8 ${
+                  result
+                    ? "xl:grid-cols-2"
+                    : "mx-auto max-w-4xl grid-cols-1"
+                }`}
+              >
+                <MissionForm
+                  name={name}
+                  description={description}
+                  budget={budget}
+                  deadline={deadline}
+                  priority={priority}
+                  projectType={projectType}
+                  teamSize={teamSize}
+                  loading={loading}
+                  error={error}
+                  onNameChange={setName}
+                  onDescriptionChange={setDescription}
+                  onBudgetChange={setBudget}
+                  onDeadlineChange={setDeadline}
+                  onPriorityChange={setPriority}
+                  onProjectTypeChange={setProjectType}
+                  onTeamSizeChange={setTeamSize}
+                  onSubmit={handleSubmit}
+                  onBack={returnHome}
+                />
+
+                <ResultPanel
+                  result={result}
+                  copied={copied}
+                  saved={saved}
+                  onCopy={copyPlan}
+                  onGenerateAnother={generateAnother}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </>
   );
 }
-
 

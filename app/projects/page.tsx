@@ -1,10 +1,39 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  DollarSign,
+  Download,
+  Pencil,
+  Rocket,
+  Search,
+  Trash2,
+  Users,
+} from "lucide-react";
+
 import { supabase } from "@/lib/supabase";
+import Navbar from "@/components/Navbar";
+
+import MissionHealth from "./components/MissionHealth";
+import TodayTasks from "./components/TodayTasks";
+import KanbanBoard from "./components/KanbanBoard";
+import ProjectTimeline from "./components/ProjectTimeline";
+import MilestonesPanel from "./components/MilestonesPanel";
+import TeamPanel from "./components/TeamPanel";
+import CrewWorkload from "./components/CrewWorkload";
+import PartnerPing from "./components/PartnerPing";
+import NotificationHistory from "./components/NotificationHistory";
+import MissionBrief from "./components/MissionBrief";
+import ProjectReports from "./components/ProjectReports";
+import ProjectCalendar from "./components/ProjectCalendar";
 
 type ProjectStatus = "Planned" | "In Progress" | "Completed";
 
@@ -31,26 +60,37 @@ type EditForm = {
   projectType: string;
   teamSize: string;
   generatedPlan: string;
-  status: ProjectStatus;
 };
 
-type SortOption =
-  | "newest"
-  | "oldest"
-  | "deadline"
-  | "priority"
-  | "name";
+const inputStyles =
+  "w-full rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/15";
 
-const priorityOrder: Record<string, number> = {
-  Critical: 4,
-  High: 3,
-  Medium: 2,
-  Low: 1,
-};
+function displayDate(date: string) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString();
+}
+
+function priorityStyles(priority: string) {
+  if (priority === "Critical") {
+    return "border-red-400/25 bg-red-400/10 text-red-300";
+  }
+
+  if (priority === "High") {
+    return "border-orange-400/25 bg-orange-400/10 text-orange-300";
+  }
+
+  if (priority === "Medium") {
+    return "border-amber-400/25 bg-amber-400/10 text-amber-300";
+  }
+
+  return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
+}
 
 export default function ProjectsPage() {
+  const router = useRouter();
+
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] =
+    useState<Project | null>(null);
 
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -58,25 +98,33 @@ export default function ProjectsPage() {
 
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortOption>("newest");
-  const [priorityFilter, setPriorityFilter] = useState("All");
-  const [typeFilter, setTypeFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadProjects() {
       setLoading(true);
       setError("");
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        router.replace("/auth");
+        return;
+      }
 
       const { data, error: loadError } = await supabase
         .from("projects")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (cancelled) return;
 
       if (loadError) {
         setError(loadError.message);
@@ -84,99 +132,63 @@ export default function ProjectsPage() {
         return;
       }
 
-      const normalizedProjects = (data || []).map((project) => ({
+      const normalized = (data || []).map((project) => ({
         ...project,
         status: (project.status || "Planned") as ProjectStatus,
       })) as Project[];
 
-      setProjects(normalizedProjects);
+      setProjects(normalized);
       setLoading(false);
     }
 
-    loadProjects();
-  }, []);
+    void loadProjects();
 
-  const projectTypes = useMemo(
-    () =>
-      Array.from(new Set(projects.map((project) => project.project_type))).sort(
-        (a, b) => a.localeCompare(b)
-      ),
-    [projects]
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
-  const visibleProjects = useMemo(() => {
+  const filteredProjects = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    const filtered = projects.filter((project) => {
-      const matchesSearch =
-        !query ||
+    if (!query) return projects;
+
+    return projects.filter((project) => {
+      return (
         project.name.toLowerCase().includes(query) ||
         project.description.toLowerCase().includes(query) ||
         project.priority.toLowerCase().includes(query) ||
-        project.project_type.toLowerCase().includes(query) ||
-        project.status.toLowerCase().includes(query);
-
-      const matchesPriority =
-        priorityFilter === "All" || project.priority === priorityFilter;
-      const matchesType =
-        typeFilter === "All" || project.project_type === typeFilter;
-      const matchesStatus =
-        statusFilter === "All" || project.status === statusFilter;
-
-      return matchesSearch && matchesPriority && matchesType && matchesStatus;
+        project.project_type.toLowerCase().includes(query)
+      );
     });
+  }, [projects, search]);
 
-    return [...filtered].sort((a, b) => {
-      switch (sortBy) {
-        case "oldest":
-          return (
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime()
-          );
-        case "deadline":
-          return (
-            new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
-          );
-        case "priority":
-          return (
-            (priorityOrder[b.priority] || 0) -
-            (priorityOrder[a.priority] || 0)
-          );
-        case "name":
-          return a.name.localeCompare(b.name);
-        case "newest":
-        default:
-          return (
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime()
-          );
-      }
-    });
-  }, [
-    projects,
-    search,
-    sortBy,
-    priorityFilter,
-    typeFilter,
-    statusFilter,
-  ]);
+  const stats = useMemo(() => {
+    const completed = projects.filter(
+      (project) => project.status === "Completed"
+    ).length;
 
-  const stats = useMemo(
-    () => ({
+    const inProgress = projects.filter(
+      (project) => project.status === "In Progress"
+    ).length;
+
+    const planned = projects.filter(
+      (project) => project.status === "Planned"
+    ).length;
+
+    return {
       total: projects.length,
-      planned: projects.filter((project) => project.status === "Planned")
-        .length,
-      inProgress: projects.filter(
-        (project) => project.status === "In Progress"
-      ).length,
-      completed: projects.filter((project) => project.status === "Completed")
-        .length,
-    }),
-    [projects]
-  );
+      planned,
+      inProgress,
+      completed,
+    };
+  }, [projects]);
 
-  const inputStyles =
-    "w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 outline-none focus:border-blue-500";
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.replace("/auth");
+    router.refresh();
+  }
 
   function openProject(project: Project) {
     setSelectedProject(project);
@@ -184,6 +196,7 @@ export default function ProjectsPage() {
     setEditForm(null);
     setError("");
     setSuccessMessage("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function closeProject() {
@@ -192,6 +205,7 @@ export default function ProjectsPage() {
     setEditForm(null);
     setError("");
     setSuccessMessage("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function startEditing() {
@@ -209,7 +223,6 @@ export default function ProjectsPage() {
       projectType: selectedProject.project_type,
       teamSize: String(selectedProject.team_size),
       generatedPlan: selectedProject.generated_plan,
-      status: selectedProject.status,
     });
 
     setEditing(true);
@@ -222,18 +235,6 @@ export default function ProjectsPage() {
     setEditForm(null);
     setError("");
     setSuccessMessage("");
-  }
-
-  function clearFilters() {
-    setSearch("");
-    setPriorityFilter("All");
-    setTypeFilter("All");
-    setStatusFilter("All");
-    setSortBy("newest");
-  }
-
-  function exportProjectAsPdf() {
-    window.print();
   }
 
   async function updateProject(event: FormEvent<HTMLFormElement>) {
@@ -254,15 +255,21 @@ export default function ProjectsPage() {
     }
 
     const teamSize = Number(editForm.teamSize);
+
     if (!Number.isInteger(teamSize) || teamSize < 1) {
       setError("Team size must be at least 1.");
       return;
     }
 
     const budget =
-      editForm.budget.trim() === "" ? null : Number(editForm.budget);
+      editForm.budget.trim() === ""
+        ? null
+        : Number(editForm.budget);
 
-    if (budget !== null && (Number.isNaN(budget) || budget < 0)) {
+    if (
+      budget !== null &&
+      (Number.isNaN(budget) || budget < 0)
+    ) {
       setError("Budget must be a valid positive number.");
       return;
     }
@@ -280,7 +287,6 @@ export default function ProjectsPage() {
       project_type: editForm.projectType,
       team_size: teamSize,
       generated_plan: editForm.generatedPlan.trim(),
-      status: editForm.status,
     };
 
     const { data, error: updateError } = await supabase
@@ -296,11 +302,17 @@ export default function ProjectsPage() {
       return;
     }
 
-    const updatedProject = data as Project;
+    const updatedProject = {
+      ...(data as Project),
+      status:
+        ((data as Project).status || selectedProject.status) as ProjectStatus,
+    };
 
     setProjects((currentProjects) =>
       currentProjects.map((project) =>
-        project.id === updatedProject.id ? updatedProject : project
+        project.id === updatedProject.id
+          ? updatedProject
+          : project
       )
     );
 
@@ -309,48 +321,6 @@ export default function ProjectsPage() {
     setEditForm(null);
     setSaving(false);
     setSuccessMessage("Project updated successfully.");
-  }
-
-  async function updateProjectStatus(
-    project: Project,
-    status: ProjectStatus
-  ) {
-    setUpdatingStatusId(project.id);
-    setError("");
-
-    const { data, error: statusError } = await supabase
-      .from("projects")
-      .update({ status })
-      .eq("id", project.id)
-      .select()
-      .single();
-
-    if (statusError) {
-      setError(statusError.message);
-      setUpdatingStatusId(null);
-      return;
-    }
-
-    const updatedProject = data as Project;
-
-    setProjects((currentProjects) =>
-      currentProjects.map((currentProject) =>
-        currentProject.id === updatedProject.id
-          ? updatedProject
-          : currentProject
-      )
-    );
-
-    if (selectedProject?.id === updatedProject.id) {
-      setSelectedProject(updatedProject);
-    }
-
-    setUpdatingStatusId(null);
-    setSuccessMessage(
-      status === "Completed"
-        ? "Project marked as completed."
-        : `Project status changed to ${status}.`
-    );
   }
 
   async function deleteProject(id: number) {
@@ -386,634 +356,729 @@ export default function ProjectsPage() {
     setDeletingId(null);
   }
 
+  function exportProject() {
+    window.print();
+  }
+
   if (selectedProject) {
+    const now = new Date();
+    const deadlineDate = new Date(
+      `${selectedProject.deadline}T23:59:59`
+    );
+
+    const daysRemaining = Math.max(
+      0,
+      Math.ceil(
+        (deadlineDate.getTime() - now.getTime()) /
+          (1000 * 60 * 60 * 24)
+      )
+    );
+
     return (
-      <main className="min-h-screen bg-slate-100 px-6 py-12 print:bg-white print:px-0 print:py-0">
-        <div className="mx-auto max-w-5xl rounded-2xl bg-white p-8 shadow-xl print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-          <div className="mb-6 flex flex-wrap gap-3 print:hidden">
-            <button
-              type="button"
-              onClick={closeProject}
-              className="rounded-lg bg-slate-200 px-4 py-2 text-slate-900 hover:bg-slate-300"
-            >
-              Back to Projects
-            </button>
+      <>
+        <Navbar onSignOut={signOut} />
 
-            {!editing && (
-              <>
+        <main className="relative min-h-screen lg:pl-[230px]">
+          <div className="relative z-10 mx-auto max-w-[1550px] px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+            <header className="flex flex-col gap-6 border-b border-cyan-400/10 pb-7 xl:flex-row xl:items-end xl:justify-between">
+              <div>
                 <button
                   type="button"
-                  onClick={startEditing}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                  onClick={closeProject}
+                  className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-cyan-300"
                 >
-                  Edit Project
+                  <ArrowLeft size={16} />
+                  Projects
                 </button>
 
-                <button
-                  type="button"
-                  onClick={exportProjectAsPdf}
-                  className="rounded-lg bg-slate-800 px-4 py-2 text-white hover:bg-slate-900"
-                >
-                  Export as PDF
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
+                    {selectedProject.name}
+                  </h1>
 
-                {selectedProject.status !== "Completed" && (
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-bold ${priorityStyles(
+                      selectedProject.priority
+                    )}`}
+                  >
+                    {selectedProject.priority} Priority
+                  </span>
+
+                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300">
+                    {selectedProject.status}
+                  </span>
+                </div>
+
+                <p className="mt-3 max-w-3xl text-slate-400">
+                  {selectedProject.description}
+                </p>
+              </div>
+
+              {!editing && (
+                <div className="flex flex-wrap gap-3 print:hidden">
                   <button
                     type="button"
-                    onClick={() =>
-                      updateProjectStatus(selectedProject, "Completed")
-                    }
-                    disabled={updatingStatusId === selectedProject.id}
-                    className="rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-60"
+                    onClick={startEditing}
+                    className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-4 py-3 font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
                   >
-                    {updatingStatusId === selectedProject.id
-                      ? "Updating..."
-                      : "Mark Complete"}
+                    <Pencil size={17} />
+                    Edit Project
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={exportProject}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 font-semibold text-slate-300 transition hover:border-cyan-400/30 hover:text-white"
+                  >
+                    <Download size={17} />
+                    Export
+                  </button>
+                </div>
+              )}
+            </header>
+
+            <nav className="sticky top-3 z-30 mt-6 overflow-x-auto rounded-2xl border border-cyan-400/15 bg-[#020817]/90 p-2 shadow-[0_15px_45px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
+              <div className="flex min-w-max gap-1">
+                {[
+                  ["Overview", "#overview"],
+                  ["Tasks", "#tasks"],
+                  ["Timeline", "#timeline"],
+                  ["Calendar", "#calendar"],
+                  ["Team", "#team"],
+                  ["Reports", "#reports"],
+                  ["Messages", "#communication"],
+                  ["AI Assistant", "#ai"],
+                  ["Project Plan", "#documents"],
+                ].map(([label, href]) => (
+                  <a
+                    key={href}
+                    href={href}
+                    className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-cyan-400/10 hover:text-cyan-300"
+                  >
+                    {label}
+                  </a>
+                ))}
+              </div>
+            </nav>
+
+            {error && (
+              <p className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+                {error}
+              </p>
+            )}
+
+            {successMessage && (
+              <p className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-300">
+                {successMessage}
+              </p>
+            )}
+
+            {editing && editForm ? (
+              <section className="mt-8 rounded-3xl border border-cyan-400/15 bg-[#031022]/75 p-6 shadow-[0_25px_90px_rgba(0,0,0,0.4)] backdrop-blur-2xl sm:p-8">
+                <form
+                  onSubmit={updateProject}
+                  className="space-y-6"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-400/60">
+                        Project Settings
+                      </p>
+
+                      <h2 className="mt-2 text-3xl font-black text-white">
+                        Edit Project
+                      </h2>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={cancelEditing}
+                        disabled={saving}
+                        className="rounded-xl border border-slate-700 bg-slate-950/60 px-5 py-3 text-slate-300 transition hover:border-cyan-400/30"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="rounded-xl bg-linear-to-r from-blue-600 to-cyan-400 px-5 py-3 font-bold text-white transition hover:brightness-110 disabled:opacity-50"
+                      >
+                        {saving
+                          ? "Saving..."
+                          : "Save Changes"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">
+                      Project Name
+                    </label>
+                    <input
+                      value={editForm.name}
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          name: event.target.value,
+                        })
+                      }
+                      className={inputStyles}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">
+                      Description
+                    </label>
+                    <textarea
+                      value={editForm.description}
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          description: event.target.value,
+                        })
+                      }
+                      rows={4}
+                      className={inputStyles}
+                    />
+                  </div>
+
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-300">
+                        Deadline
+                      </label>
+                      <input
+                        type="date"
+                        value={editForm.deadline}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            deadline: event.target.value,
+                          })
+                        }
+                        className={inputStyles}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-300">
+                        Budget ($)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editForm.budget}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            budget: event.target.value,
+                          })
+                        }
+                        className={inputStyles}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-300">
+                        Priority
+                      </label>
+                      <select
+                        value={editForm.priority}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            priority: event.target.value,
+                          })
+                        }
+                        className={inputStyles}
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Critical">Critical</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-300">
+                        Project Type
+                      </label>
+                      <select
+                        value={editForm.projectType}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            projectType: event.target.value,
+                          })
+                        }
+                        className={inputStyles}
+                      >
+                        <option value="Campus Event">Campus Event</option>
+                        <option value="Software">Software</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="HR">HR</option>
+                        <option value="Operations">Operations</option>
+                        <option value="Construction">Construction</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-300">
+                        Team Size
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editForm.teamSize}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            teamSize: event.target.value,
+                          })
+                        }
+                        className={inputStyles}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">
+                      AI Project Plan
+                    </label>
+                    <textarea
+                      value={editForm.generatedPlan}
+                      onChange={(event) =>
+                        setEditForm({
+                          ...editForm,
+                          generatedPlan: event.target.value,
+                        })
+                      }
+                      rows={18}
+                      className={`${inputStyles} font-mono text-sm`}
+                    />
+                  </div>
+                </form>
+              </section>
+            ) : (
+              <>
+                <section
+                  id="overview"
+                  className="scroll-mt-28 mt-8 grid overflow-hidden rounded-2xl border border-cyan-400/20 bg-[#031022]/75 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:grid-cols-2 xl:grid-cols-4"
+                >
+                  <div className="border-b border-cyan-400/10 p-5 sm:border-r xl:border-b-0">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
+                        <CheckCircle2 size={20} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          Status
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {selectedProject.status}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-b border-cyan-400/10 p-5 xl:border-b-0 xl:border-r">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-400/10 text-blue-300">
+                        <Clock3 size={20} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          Days Remaining
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-white">
+                          {daysRemaining}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-b border-cyan-400/10 p-5 sm:border-r xl:border-b-0">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/10 text-violet-300">
+                        <Users size={20} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          Team Size
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-white">
+                          {selectedProject.team_size}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300">
+                        <DollarSign size={20} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          Project Budget
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {selectedProject.budget === null
+                            ? "Not Set"
+                            : `$${selectedProject.budget.toLocaleString(
+                                "en-US"
+                              )}`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <MissionHealth project={selectedProject} />
+
+                <section className="mt-8 grid gap-6 xl:grid-cols-[0.95fr_1.55fr]">
+                  <div id="tasks" className="scroll-mt-28">
+                    <TodayTasks projectId={selectedProject.id} />
+                  </div>
+
+                  <KanbanBoard projectId={selectedProject.id} />
+                </section>
+
+                <div id="timeline" className="scroll-mt-28">
+                  <ProjectTimeline projectId={selectedProject.id} />
+                </div>
+                <div id="calendar" className="scroll-mt-28">
+  <ProjectCalendar projectId={selectedProject.id} />
+</div>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <MilestonesPanel projectId={selectedProject.id} />
+
+                  <div id="team" className="scroll-mt-28">
+                    <TeamPanel projectId={selectedProject.id} />
+                  </div>
+                </div>
+
+                <CrewWorkload projectId={selectedProject.id} />
+
+                <div id="reports" className="scroll-mt-28">
+                  <ProjectReports
+                    projectId={selectedProject.id}
+                    projectName={selectedProject.name}
+                    projectDescription={selectedProject.description}
+                    deadline={selectedProject.deadline}
+                    priority={selectedProject.priority}
+                    budget={selectedProject.budget}
+                    teamSize={selectedProject.team_size}
+                    status={selectedProject.status}
+                  />
+                </div>
+
+                <div
+                  id="communication"
+                  className="scroll-mt-28 grid gap-6 xl:grid-cols-2"
+                >
+                  <PartnerPing
+                    projectId={selectedProject.id}
+                    projectName={selectedProject.name}
+                  />
+
+                  <NotificationHistory
+                    projectId={selectedProject.id}
+                  />
+                </div>
+
+                <div id="ai" className="scroll-mt-28">
+                  <MissionBrief
+  projectId={selectedProject.id}
+  projectName={selectedProject.name}
+  projectDescription={selectedProject.description}
+  deadline={selectedProject.deadline}
+  priority={selectedProject.priority}
+  budget={selectedProject.budget}
+  teamSize={selectedProject.team_size}
+  status={selectedProject.status}
+/>
+                </div>
+
+                <section
+                  id="documents"
+                  className="scroll-mt-28 mt-8 overflow-hidden rounded-3xl border border-cyan-400/15 bg-[#031022]/70 p-6 text-slate-300 shadow-[0_25px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:p-8"
+                >
+                  <div className="mb-6 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-400/60">
+                        AI Planning
+                      </p>
+                      <h2 className="mt-2 text-2xl font-black text-white">
+                        AI Project Plan
+                      </h2>
+                      <p className="mt-2 text-sm text-slate-500">
+                        The generated project plan for this project.
+                      </p>
+                    </div>
+
+                    <CalendarDays
+                      size={22}
+                      className="text-cyan-300"
+                    />
+                  </div>
+
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({ children }) => (
+                        <h1 className="mb-4 mt-7 text-3xl font-bold text-white">
+                          {children}
+                        </h1>
+                      ),
+                      h2: ({ children }) => (
+                        <h2 className="mb-3 mt-7 text-2xl font-bold text-white">
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="mb-3 mt-6 text-xl font-semibold text-white">
+                          {children}
+                        </h3>
+                      ),
+                      p: ({ children }) => (
+                        <p className="mb-4 leading-7 text-slate-300">
+                          {children}
+                        </p>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="mb-4 list-disc space-y-2 pl-6 text-slate-300">
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="mb-4 list-decimal space-y-2 pl-6 text-slate-300">
+                          {children}
+                        </ol>
+                      ),
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto">
+                          <table className="mb-6 w-full min-w-150 border-collapse text-sm">
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      th: ({ children }) => (
+                        <th className="border border-cyan-400/15 bg-cyan-400/5 p-3 text-left font-semibold text-white">
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="border border-slate-800 p-3 align-top text-slate-300">
+                          {children}
+                        </td>
+                      ),
+                    }}
+                  >
+                    {selectedProject.generated_plan}
+                  </ReactMarkdown>
+                </section>
               </>
             )}
           </div>
+        </main>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Navbar onSignOut={signOut} />
+
+      <main className="relative min-h-screen lg:pl-[230px]">
+        <div className="relative z-10 mx-auto max-w-[1550px] px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+          <header className="flex flex-col gap-6 border-b border-cyan-400/10 pb-7 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Mission Control</span>
+                <span>/</span>
+                <span className="text-cyan-300">Projects</span>
+              </div>
+
+              <h1 className="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl">
+                Projects
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-slate-400">
+                View, search, and manage your active project portfolio.
+              </p>
+            </div>
+
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-cyan-400 px-6 py-3.5 font-bold text-white shadow-[0_0_35px_rgba(34,211,238,0.18)] transition hover:-translate-y-0.5 hover:brightness-110"
+            >
+              <Rocket size={18} />
+              Create New Project
+            </Link>
+          </header>
+
+          <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Total Projects", stats.total],
+              ["Planned", stats.planned],
+              ["In Progress", stats.inProgress],
+              ["Completed", stats.completed],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-2xl border border-cyan-400/15 bg-[#031022]/65 p-5 backdrop-blur-xl"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                  {label}
+                </p>
+                <p className="mt-2 text-3xl font-black text-white">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-cyan-400/15 bg-[#031022]/60 p-4 backdrop-blur-xl">
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
+              />
+
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search projects by name, description, priority, or type..."
+                className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-3 pl-11 pr-4 text-white outline-none placeholder:text-slate-600 focus:border-cyan-400"
+              />
+            </div>
+          </section>
 
           {error && (
-            <p className="mb-6 rounded-lg bg-red-50 p-4 text-red-700 print:hidden">
+            <p className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
               {error}
             </p>
           )}
 
           {successMessage && (
-            <p className="mb-6 rounded-lg bg-green-50 p-4 text-green-700 print:hidden">
+            <p className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-300">
               {successMessage}
             </p>
           )}
 
-          {editing && editForm ? (
-            <form onSubmit={updateProject} className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <h1 className="text-3xl font-bold text-slate-900">
-                  Edit Project
-                </h1>
+          {loading ? (
+            <div className="mt-8 rounded-2xl border border-cyan-400/10 bg-[#031022]/60 p-8 text-slate-400 backdrop-blur-xl">
+              Loading projects...
+            </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="mt-8 rounded-3xl border border-dashed border-slate-800 bg-[#031022]/50 p-10 text-center">
+              <Rocket
+                size={32}
+                className="mx-auto rotate-[-40deg] text-cyan-300"
+              />
 
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={cancelEditing}
-                    disabled={saving}
-                    className="rounded-lg bg-slate-200 px-5 py-3 text-slate-900 hover:bg-slate-300 disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
+              <p className="mt-4 font-semibold text-white">
+                {projects.length === 0
+                  ? "No projects yet."
+                  : `No projects match "${search}".`}
+              </p>
 
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    {saving ? "Saving..." : "Save Changes"}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Project Name
-                </label>
-                <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(event) =>
-                    setEditForm({ ...editForm, name: event.target.value })
-                  }
-                  className={inputStyles}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Description
-                </label>
-                <textarea
-                  value={editForm.description}
-                  onChange={(event) =>
-                    setEditForm({
-                      ...editForm,
-                      description: event.target.value,
-                    })
-                  }
-                  rows={4}
-                  className={inputStyles}
-                />
-              </div>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block font-medium text-slate-800">
-                    Deadline
-                  </label>
-                  <input
-                    type="date"
-                    value={editForm.deadline}
-                    onChange={(event) =>
-                      setEditForm({
-                        ...editForm,
-                        deadline: event.target.value,
-                      })
-                    }
-                    className={inputStyles}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-medium text-slate-800">
-                    Budget ($)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editForm.budget}
-                    onChange={(event) =>
-                      setEditForm({
-                        ...editForm,
-                        budget: event.target.value,
-                      })
-                    }
-                    placeholder="Not provided"
-                    className={inputStyles}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-medium text-slate-800">
-                    Priority
-                  </label>
-                  <select
-                    value={editForm.priority}
-                    onChange={(event) =>
-                      setEditForm({
-                        ...editForm,
-                        priority: event.target.value,
-                      })
-                    }
-                    className={inputStyles}
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                    <option value="Critical">Critical</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-medium text-slate-800">
-                    Project Type
-                  </label>
-                  <select
-                    value={editForm.projectType}
-                    onChange={(event) =>
-                      setEditForm({
-                        ...editForm,
-                        projectType: event.target.value,
-                      })
-                    }
-                    className={inputStyles}
-                  >
-                    <option value="Campus Event">Campus Event</option>
-                    <option value="Software">Software</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="HR">HR</option>
-                    <option value="Operations">Operations</option>
-                    <option value="Construction">Construction</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-medium text-slate-800">
-                    Team Size
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={editForm.teamSize}
-                    onChange={(event) =>
-                      setEditForm({
-                        ...editForm,
-                        teamSize: event.target.value,
-                      })
-                    }
-                    className={inputStyles}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block font-medium text-slate-800">
-                    Status
-                  </label>
-                  <select
-                    value={editForm.status}
-                    onChange={(event) =>
-                      setEditForm({
-                        ...editForm,
-                        status: event.target.value as ProjectStatus,
-                      })
-                    }
-                    className={inputStyles}
-                  >
-                    <option value="Planned">Planned</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block font-medium text-slate-800">
-                  Generated Project Plan
-                </label>
-                <textarea
-                  value={editForm.generatedPlan}
-                  onChange={(event) =>
-                    setEditForm({
-                      ...editForm,
-                      generatedPlan: event.target.value,
-                    })
-                  }
-                  rows={18}
-                  className={`${inputStyles} font-mono text-sm`}
-                />
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={cancelEditing}
-                  disabled={saving}
-                  className="w-full rounded-lg bg-slate-200 p-3 text-slate-900 hover:bg-slate-300 disabled:opacity-60"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full rounded-lg bg-blue-600 p-3 text-white hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
+              <p className="mt-2 text-sm text-slate-500">
+                Create a new project or adjust your search.
+              </p>
+            </div>
           ) : (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="mb-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
-                    {selectedProject.status}
-                  </div>
-
-                  <h1 className="text-3xl font-bold text-slate-900">
-                    {selectedProject.name}
-                  </h1>
-
-                  <p className="mt-2 text-slate-600">
-                    {selectedProject.description}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 rounded-xl bg-slate-100 p-5 text-slate-800 sm:grid-cols-2">
-                <p>
-                  <strong>Deadline:</strong> {selectedProject.deadline}
-                </p>
-                <p>
-                  <strong>Budget:</strong>{" "}
-                  {selectedProject.budget === null
-                    ? "Not provided"
-                    : `$${selectedProject.budget.toLocaleString("en-US")}`}
-                </p>
-                <p>
-                  <strong>Priority:</strong> {selectedProject.priority}
-                </p>
-                <p>
-                  <strong>Project Type:</strong>{" "}
-                  {selectedProject.project_type}
-                </p>
-                <p>
-                  <strong>Team Size:</strong> {selectedProject.team_size}
-                </p>
-                <p>
-                  <strong>Status:</strong> {selectedProject.status}
-                </p>
-              </div>
-
-              <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-6 text-slate-800 print:border-0 print:bg-white print:p-0">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    h1: ({ children }) => (
-                      <h1 className="mb-4 mt-6 text-3xl font-bold text-slate-900">
-                        {children}
-                      </h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="mb-3 mt-6 text-2xl font-bold text-slate-900">
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="mb-3 mt-5 text-xl font-semibold text-slate-900">
-                        {children}
-                      </h3>
-                    ),
-                    p: ({ children }) => (
-                      <p className="mb-4 leading-7">{children}</p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="mb-4 list-disc space-y-2 pl-6">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="mb-4 list-decimal space-y-2 pl-6">
-                        {children}
-                      </ol>
-                    ),
-                    table: ({ children }) => (
-                      <div className="overflow-x-auto">
-                        <table className="mb-6 w-full min-w-[600px] border-collapse text-sm">
-                          {children}
-                        </table>
-                      </div>
-                    ),
-                    th: ({ children }) => (
-                      <th className="border border-slate-300 bg-slate-200 p-3 text-left font-semibold">
-                        {children}
-                      </th>
-                    ),
-                    td: ({ children }) => (
-                      <td className="border border-slate-300 p-3 align-top">
-                        {children}
-                      </td>
-                    ),
-                  }}
+            <section className="mt-8 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+              {filteredProjects.map((project) => (
+                <article
+                  key={project.id}
+                  className="group relative overflow-hidden rounded-3xl border border-cyan-400/15 bg-[#031022]/70 p-6 shadow-[0_20px_70px_rgba(0,0,0,0.3)] backdrop-blur-xl transition hover:-translate-y-1 hover:border-cyan-400/30"
                 >
-                  {selectedProject.generated_plan}
-                </ReactMarkdown>
-              </section>
-            </>
+                  <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full border border-cyan-400/10" />
+
+                  <div className="relative">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400/60">
+                          {project.project_type}
+                        </p>
+
+                        <h2 className="mt-2 text-xl font-black text-white">
+                          {project.name}
+                        </h2>
+                      </div>
+
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${priorityStyles(
+                          project.priority
+                        )}`}
+                      >
+                        {project.priority}
+                      </span>
+                    </div>
+
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">
+                      {project.description}
+                    </p>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                          Deadline
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-300">
+                          {displayDate(project.deadline)}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                          Team
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-300">
+                          {project.team_size} members
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openProject(project)}
+                        className="flex-1 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-4 py-3 font-bold text-cyan-300 transition hover:bg-cyan-400/20"
+                      >
+                        Open Project
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void deleteProject(project.id)
+                        }
+                        disabled={deletingId === project.id}
+                        aria-label={`Delete ${project.name}`}
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-red-400/15 bg-red-400/5 text-red-300 transition hover:bg-red-400/10 disabled:opacity-50"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </section>
           )}
         </div>
       </main>
-    );
-  }
-
-  return (
-    <main className="min-h-screen bg-slate-100 px-6 py-12">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-4xl font-bold text-slate-900">
-              Saved Projects
-            </h1>
-            <p className="mt-2 text-slate-600">
-              View, filter, track, and manage your project plans.
-            </p>
-          </div>
-
-          <Link
-            href="/"
-            className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700"
-          >
-            Create New Project
-          </Link>
-        </div>
-
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl bg-white p-5 shadow">
-            <p className="text-sm text-slate-500">Total Projects</p>
-            <p className="mt-1 text-3xl font-bold text-slate-900">
-              {stats.total}
-            </p>
-          </div>
-          <div className="rounded-xl bg-white p-5 shadow">
-            <p className="text-sm text-slate-500">Planned</p>
-            <p className="mt-1 text-3xl font-bold text-slate-900">
-              {stats.planned}
-            </p>
-          </div>
-          <div className="rounded-xl bg-white p-5 shadow">
-            <p className="text-sm text-slate-500">In Progress</p>
-            <p className="mt-1 text-3xl font-bold text-slate-900">
-              {stats.inProgress}
-            </p>
-          </div>
-          <div className="rounded-xl bg-white p-5 shadow">
-            <p className="text-sm text-slate-500">Completed</p>
-            <p className="mt-1 text-3xl font-bold text-slate-900">
-              {stats.completed}
-            </p>
-          </div>
-        </div>
-
-        <div className="mb-8 rounded-xl bg-white p-5 shadow">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <div className="lg:col-span-2">
-              <label
-                htmlFor="project-search"
-                className="mb-2 block text-sm font-medium text-slate-800"
-              >
-                Search
-              </label>
-              <input
-                id="project-search"
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Name, description, priority, type, or status..."
-                className={inputStyles}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-800">
-                Priority
-              </label>
-              <select
-                value={priorityFilter}
-                onChange={(event) => setPriorityFilter(event.target.value)}
-                className={inputStyles}
-              >
-                <option value="All">All priorities</option>
-                <option value="Critical">Critical</option>
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-800">
-                Type
-              </label>
-              <select
-                value={typeFilter}
-                onChange={(event) => setTypeFilter(event.target.value)}
-                className={inputStyles}
-              >
-                <option value="All">All types</option>
-                {projectTypes.map((projectType) => (
-                  <option key={projectType} value={projectType}>
-                    {projectType}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-800">
-                Status
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className={inputStyles}
-              >
-                <option value="All">All statuses</option>
-                <option value="Planned">Planned</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Completed">Completed</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-end gap-4">
-            <div className="min-w-52">
-              <label className="mb-2 block text-sm font-medium text-slate-800">
-                Sort by
-              </label>
-              <select
-                value={sortBy}
-                onChange={(event) =>
-                  setSortBy(event.target.value as SortOption)
-                }
-                className={inputStyles}
-              >
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="deadline">Deadline soonest</option>
-                <option value="priority">Highest priority</option>
-                <option value="name">Project name</option>
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="rounded-lg bg-slate-200 px-5 py-3 text-slate-900 hover:bg-slate-300"
-            >
-              Clear Filters
-            </button>
-
-            <p className="text-sm text-slate-500">
-              Showing {visibleProjects.length} of {projects.length}
-            </p>
-          </div>
-        </div>
-
-        {error && (
-          <p className="mb-6 rounded-lg bg-red-50 p-4 text-red-700">
-            {error}
-          </p>
-        )}
-
-        {successMessage && (
-          <p className="mb-6 rounded-lg bg-green-50 p-4 text-green-700">
-            {successMessage}
-          </p>
-        )}
-
-        {loading ? (
-          <p className="text-slate-700">Loading projects...</p>
-        ) : visibleProjects.length === 0 ? (
-          <div className="rounded-xl bg-white p-8 text-center shadow">
-            <p className="text-slate-700">
-              {projects.length === 0
-                ? "No saved projects yet."
-                : "No projects match the current search and filters."}
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {visibleProjects.map((project) => (
-              <article
-                key={project.id}
-                className="rounded-xl bg-white p-6 shadow"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-xl font-bold text-slate-900">
-                    {project.name}
-                  </h2>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {project.status}
-                  </span>
-                </div>
-
-                <p className="mt-2 line-clamp-3 text-slate-600">
-                  {project.description}
-                </p>
-
-                <div className="mt-4 space-y-1 text-sm text-slate-700">
-                  <p>Deadline: {project.deadline}</p>
-                  <p>Priority: {project.priority}</p>
-                  <p>Type: {project.project_type}</p>
-                </div>
-
-                <div className="mt-5">
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Change status
-                  </label>
-                  <select
-                    value={project.status}
-                    disabled={updatingStatusId === project.id}
-                    onChange={(event) =>
-                      updateProjectStatus(
-                        project,
-                        event.target.value as ProjectStatus
-                      )
-                    }
-                    className={inputStyles}
-                  >
-                    <option value="Planned">Planned</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
-                  </select>
-                </div>
-
-                <div className="mt-6 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => openProject(project)}
-                    className="w-full rounded-lg bg-blue-600 p-3 text-white hover:bg-blue-700"
-                  >
-                    Open
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => deleteProject(project.id)}
-                    disabled={deletingId === project.id}
-                    className="w-full rounded-lg bg-red-100 p-3 text-red-700 hover:bg-red-200 disabled:opacity-60"
-                  >
-                    {deletingId === project.id
-                      ? "Deleting..."
-                      : "Delete"}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-    </main>
+    </>
   );
 }
+
+
